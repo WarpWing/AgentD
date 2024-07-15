@@ -2,39 +2,48 @@ import time
 import streamlit as st
 import logging
 import sys
-st.set_page_config(page_title=f"AgentD", page_icon="🌎", layout="centered", initial_sidebar_state="auto", menu_items=None)
-st.title(f"AgentD")
 
+st.set_page_config(
+    page_title="AgentD",
+    page_icon="./public/dickinson_favicon.png",
+    layout="centered",
+    initial_sidebar_state="auto",
+    menu_items=None
+)
 
+st.title("AgentD v0.1")
+
+# Set up logging
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-
-if "messages" not in st.session_state.keys(): # Initialize the chat messages history
-    st.session_state.messages = [{"role": "assistant", "content": "My name is AgentD. I'm an Chat Agent designed to assist with Dickinson related queries with a focus on sustainability."}
-    ]
-
-if "chat_engine" not in st.session_state.keys(): # Initialize the chat engine
-    st.session_state.chat_engine = int(5) # Create ReAct Agent 
-
-if prompt := st.chat_input("Your question"): # Prompt for user input and save to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-for message in st.session_state.messages: # Display the prior chat messages
-    with st.chat_message(message["role"]):
+for message in st.session_state.messages:
+    with st.chat_message(message["role"], avatar="./public/dickinson_picture.png" if message["role"] == "assistant" else None):
         st.write(message["content"])
-        
-# Main Chat Logic
-if st.session_state.messages[-1]["role"] != "assistant":
-        with st.chat_message("assistant"):
-            res_box = st.empty()  # Placeholder for the response text
-            with st.spinner("Thinking..."):
-                response = st.session_state.chat_engine.stream_chat(prompt)
-                full_response = ""
-                for token in response.response_gen:
-                    time.sleep(0.0001)
-                    full_response += "".join(token)
-                    res_box.write(full_response)
-                message = {"role": "assistant", "content": response.response}
-                st.session_state.messages.append(message)
+
+if not st.session_state.messages:
+    init = "My name is AgentD. I'm an AI Agent designed to help with Dickinson College related inquiries!"
+    st.session_state.messages.append({"role": "assistant", "content": init})
+    with st.chat_message("assistant", avatar="./public/dickinson_picture.png"):
+        st.write(init)
+
+prompt = st.chat_input("Your question")
+
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    with st.spinner("Thinking..."):
+        time.sleep(2)  
+        response = "This is a test message."
+
+    with st.chat_message("assistant", avatar="./public/dickinson_picture.png"):
+        st.write(response)
+
+    st.session_state.messages.append({"role": "assistant", "content": response})
+
+
