@@ -16,9 +16,11 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.options import Options
+from duckduckgo_search import DDGS
+from firecrawl import FirecrawlApp
+
 
 os.environ["COHERE_API_KEY"] = ""
-os.environ['TAVILY_API_KEY'] = ""
 
 co = cohere.Client(os.environ["COHERE_API_KEY"])
 
@@ -65,11 +67,11 @@ class StreamlitMarkdownLogger(BaseCallbackHandler):
         self.log(f"Action Input: {action.tool_input}", "info")
 
     def on_agent_finish(self, finish, **kwargs: Any) -> None:
-        self.log(f"Final Answer: {finish.return_values['output']}", "final")
+        self.log(f"Final Answer: \n{finish.return_values['output']}", "final")
         self.log("Chain ended", "info")
 
 # Set up the ChatCohere model
-llm = ChatCohere(model="command-r-plus",connectors=[{"id": "web-search"}])
+llm = ChatCohere(model="command-r-plus",temperature=0.3,max_tokens=3900)
 
 # Fetch people data
 f = requests.get('https://www2.dickinson.edu/lis/angularJS_services/directory_open/data.cfc?method=f_getAllPeople').json()
@@ -138,6 +140,26 @@ def return_faculty_classes(email: str) -> str:
     }
     return json.dumps(result, indent=2)
 
+
+# Static Params for Firecrawl
+params = {
+    'pageOptions': {
+        'onlyMainContent': True
+    }
+}
+
+# Web Search (Prototype with DuckDuckGo + Firecrawl)
+def dickinson_search_function(query: str) -> str:
+    results = ""
+    firecrawl = FirecrawlApp(api_url='', api_key="Banana Pudding")
+    internet_results = DDGS().text(f"{query} site:dickinson.edu", max_results=3)
+   
+    for result in internet_results:
+        firecrawl_content = firecrawl.scrape_url(result["href"], params=params)
+        results += f"{firecrawl_content['content']}\n"
+    
+    return results
+
 # Define tools
 find_record_tool = Tool(
     name="find_record",
@@ -148,24 +170,23 @@ find_record_tool = Tool(
 return_faculty_classes_tool = Tool(
     name="return_classes",
     func=return_faculty_classes,
-    description="Get education details and courses taught by a faculty member. Input should be the faculty member's email address."
+    description="Get education details and courses taught by a faculty member. Input should be the faculty member's email address. If there are no classes, use the dickinson_search tool to confirm it."
 )
 
-internet_search = Tool(
-  name="internet_search",
-  func=TavilySearchResults(include_domain=["dickinson.edu"], max_result=3,search_depth="advanced"),
-  description="Returns a list of relevant document snippets for a textual query retrieved from the internet. Input should be a query to search the internet with."
+dickinson_search_tool = Tool(
+    name="dickinson_search",
+    func=dickinson_search_function,
+    description="Get search results on information related to Dickinson College. Should always be used for grounding after exhausting all relevant tools. Input should be a query to search up."
 )
 
 
-
-tools = [find_record_tool, return_faculty_classes_tool,internet_search]
+tools = [find_record_tool, dickinson_search_tool]
 
 prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are AgentD, a question and answering agent created by Ty Chermsirivatana. You were made to answer questions about Dickinson College using the various tools available to you. You need to be as verbose and detailed as possible. Make sure to mention a specific professor or staff member as a point of contact if the topic has it (like directors or chairs of certain centers of programs). When giving information about faculty or staff, make sure to mention their department, title, phone number, building and most importantly, their classes (separated in bullet points by Fall and Spring and Summer if applicable) (which you should provide in bullet point form.)",
+            "You are AgentD, a question and answering agent created by Ty Chermsirivatana. You were made to answer questions about Dickinson College using the various tools available to you. You need to be as verbose and detailed as possible. Make sure to mention a specific professor or staff member as a point of contact if the topic has it (like directors or chairs of certain centers of programs). When giving information about faculty or staff, make sure to mention their department, title, phone number, building and most importantly, their classes (separated in bullet points by Fall and Spring and Summer if) (which you should provide in bullet point form.)",
         ),
         ("user", "{input}"),
     ]
@@ -175,10 +196,11 @@ prompt = ChatPromptTemplate.from_messages(
 agent = create_cohere_react_agent(
     llm,
     tools,
-    prompt
+    prompt,
+    
 )
 
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=5)
 
 def main():
     st.title("AgentD ReAct Demo by Ty Chermsirivatana")

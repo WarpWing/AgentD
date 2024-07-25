@@ -6,7 +6,6 @@ import os
 import cohere
 
 # Cohere Auth Setup
-os.environ["COHERE_API_KEY"] = ""
 co = cohere.Client(os.environ["COHERE_API_KEY"])
 
 # Set up Streamlit page configuration
