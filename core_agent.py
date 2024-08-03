@@ -277,7 +277,7 @@ def index_whole_file():
     with open('index.json', 'w') as f:
         json.dump(cache_contents, f, indent=2)
     
-    st.write("💾 Cache contents written to index.json")
+    st.write("💾 Cache contents written to cache")
 
 if __name__ == "__main__":
     main()
