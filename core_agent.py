@@ -2,17 +2,10 @@ import os
 import json
 import time
 import requests
-import re
 import streamlit as st
 from typing import Dict, Any
 from dotenv import load_dotenv
-from langchain_cohere import ChatCohere, create_cohere_react_agent
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.agents import AgentExecutor
-from langchain.tools import Tool
-from duckduckgo_search import DDGS
 from firecrawl import FirecrawlApp
-from bs4 import BeautifulSoup
 import cohere
 
 # Load environment variables
@@ -21,7 +14,6 @@ load_dotenv()
 # Initialize external services and clients
 co = cohere.Client(os.getenv("COHERE_API_KEY"))
 firecrawl = FirecrawlApp(api_url=os.getenv("FIRECRAWL_API_ENDPOINT"), api_key="Banana Pudding")
-pplx_key = os.getenv("PERPLEXITY_API_Key")
 
 params = {
     'pageOptions': {
@@ -29,8 +21,14 @@ params = {
     }
 }
 
+agentd_prompt = """
+You are an AI assistant for Dickinson College, designed to provide comprehensive, accurate, and user-friendly responses to queries. Your responses should be detailed and offer a clear overview, including relevant contact information and course details where applicable. When providing information about faculty or staff, ensure you include their full name, department, title, and a list of courses taught, separated by semester (Fall, Spring, and Summer). Additionally, mention specific professors or staff as points of contact if they are directors or hold similar positions. 
+
+Your responses should be concise, well-organized, and within a word limit of 600 words, focusing on providing a complete and accurate response. 
+"""
+
 # Tool functions
-def return_faculty_profile(query) -> str:
+def return_faculty_profile(query: str) -> str:
     st.write(f"🔎 Searching for faculty profile: `{query}`")
 
     # Fetch directory data
@@ -73,78 +71,113 @@ def return_faculty_profile(query) -> str:
             "directory_info": record,
             "faculty_profile": profile_content
         }, indent=2)
-        return result
+        return [{"results": result}]
     else:
         st.write("❌ No matching record found.")
         return "No matching record found."
 
-def dickinson_search_function(query: str) -> str:
-    st.write(f"🔍 Performing Dickinson search for: `{query}`")
+def perplexity_search(query: str) -> str:
+    st.write(f"🔍 Performing Perplexity search for: `{query}`")
 
-    results = ""
-    internet_results = DDGS().text(f"{query} site:dickinson.edu", max_results=3)
-   
-    for result in internet_results:
-        url = result["href"]
-        st.write(f"🌐 Found relevant link: `{url}`")
-        st.write("🔄 Scraping content for this URL")
-        firecrawl_content = firecrawl.scrape_url(url, params=params)
-        results += f"{firecrawl_content['content']}\n"
-    
-    return results
+    url = "https://api.perplexity.ai/chat/completions"
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [
+            {
+                "role": "system",
+                "content": agentd_prompt
+            },
+            {
+                "role": "user",
+                "content": query + "Dickinson College"
+            }
+        ]
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": f"Bearer {os.getenv('PERPLEXITY_KEY')}"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        result = response.json()
+        st.write("✅ Successfully retrieved information from the Perplexity API")
+        return [{"results": result['choices'][0]['message']['content']}]
+    except Exception as e:
+        st.write(f"❌ Error fetching information from Perplexity API: {str(e)}")
+        return f"Error fetching information: {str(e)}"
 
 # Set up tools
-return_faculty_prof = Tool(
-    name="return_faculty_profile",
-    func=return_faculty_profile,
-    description="Return details about a Faculty Member (Professors). You should use this tool when needing information a professor's education, courses they teach or their biography/ personal information. Input should be the faculty member's email address. If you get a First and Last Name, you should use the find_record tool first to get the email address."
-)
+return_faculty_prof = {
+    "name": "return_faculty_profile",
+    "description": "Return details about a Faculty Member (Professors). Use this tool when needing specific information about a professor's education, courses they teach or their biography/personal information. Input should be the faculty member's email address or full name.",
+    "parameter_definitions": {
+        "query": {
+            "description": "The faculty member's email address or full name",
+            "type": "str",
+            "required": True
+        }
+    }
+}
 
-dickinson_search_tool = Tool(
-    name="dickinson_search",
-    func=dickinson_search_function,
-    description="Get search results on information related to Dickinson College. Should always be used for grounding after exhausting all relevant tools. Input should be a query to search up."
-)
+perplexity_search_tool = {
+    "name": "perplexity_search",
+    "description": "Get information related to Dickinson College using the Perplexity API. Use this tool first for general queries about Dickinson College. Input should be a query to search up.",
+    "parameter_definitions": {
+        "query": {
+            "description": "The query to search for information about Dickinson College",
+            "type": "str",
+            "required": True
+        }
+    }
+}
 
-tools = [dickinson_search_tool, return_faculty_prof]
+tools = [perplexity_search_tool, return_faculty_prof]
 
-# Set up agent and executor
-prompt_template = """
-You are AgentD, a question and answering agent created by Ty Chermsirivatana. You were made to answer questions about Dickinson College using the various tools available to you. 
-You need to be as verbose and detailed as possible. Make sure to mention a specific professor or staff member as a point of contact if the topic has it (like directors or chairs of certain centers of programs). 
-When giving information about faculty or staff, make sure to mention their department, title, phone number, building and most importantly, their classes (separated in bullet points by Fall and Spring and Summer if) 
-(which you should provide in bullet point form).
-"""
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", prompt_template),
-        ("human", "{input}"),
-    ]
-)
+st.title("🤖 AgentD Demo by Ty Chermsirivatana")
+st.write("This AgentD demo is powered by the Cohere and Perplexity APIs. It is designed to answer questions about Dickinson College. It currently has a Perplexity search tool and a faculty profile tool.")
 
-llm = ChatCohere(model="command-r-plus", temperature=0.2, streaming=True)
-agent = create_cohere_react_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=5)
+user_input = st.text_input("🙋 Enter your question:")
+if st.button("🚀 Get Answer"):
+    if user_input:
+        st.write(f"📝 Processing query: `{user_input}`")
+        
+        start_time = time.time()
+        
+        message = agentd_prompt + user_input
+        model = "command-r-plus"
 
-# Main function
-def main():
-    st.title("🤖 AgentD ReAct Demo by Ty Chermsirivatana")
-    st.write("This AgentD ReAct demo is powered by the Cohere and Firecrawl API. It is designed to answer questions about Dickinson College. It currently has a faculty profile tool and a grounded web search tool.")
-    
-    user_input = st.text_input("🙋 Enter your question:")
-    if st.button("🚀 Get Answer"):
-        if user_input:
-            st.write(f"📝 Processing query: `{user_input}`")
+        res = co.chat(model=model, message=message, force_single_step=False, tools=tools)
+
+        while res.tool_calls:
+            st.write(f"💭 Thought: {res.text}")  
+            tool_results = []
+            for call in res.tool_calls:
+                if call.name == "return_faculty_profile":
+                    tool_output = return_faculty_profile(call.parameters["query"])
+                elif call.name == "perplexity_search":
+                    tool_output = perplexity_search(call.parameters["query"])
+                else:
+                    tool_output = "Unknown tool called"
+                
+                search_results = {"call": call, "outputs": tool_output}
+                tool_results.append(search_results)
             
-            start_time = time.time()
-            result = agent_executor.invoke({"input": user_input})
-            end_time = time.time()
-            
-            st.write(f"🏁 Final Answer:\n\n{result['output']}")
-            st.write(f"⏱️ Time taken: {end_time - start_time:.2f} seconds")
-        else:
-            st.write("⚠️ Please enter a question.")
-
-if __name__ == "__main__":
-    main()
+            res = co.chat(
+                model="command-r-plus",
+                chat_history=res.chat_history,
+                message="",
+                force_single_step=False,
+                tools=tools,
+                tool_results=tool_results
+            )
+        
+        end_time = time.time()
+        
+        st.write(f"🏁 Final Answer:\n\n{res.text}")
+        st.write(f"⏱️ Time taken: {end_time - start_time:.2f} seconds")
+    else:
+        st.write("⚠️ Please enter a question.")
