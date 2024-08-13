@@ -123,7 +123,7 @@ dickinson_search_tool = Tool(
 tools = [dickinson_search_tool, return_faculty_prof]
 
 def query_agent(query):
-    llm = ChatGroq(temperature=0, groq_api_key=os.getenv("GROQ_KEY"), model_name="llama3-70b-8192")
+    llm = ChatGroq(temperature=0.2, groq_api_key=os.getenv("GROQ_KEY"), model_name="llama3-70b-8192")
     react_prompt = hub.pull("hwchase17/react")
     agent = create_react_agent(llm, tools, react_prompt)
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
