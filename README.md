@@ -1,5 +1,7 @@
 # AgentD
-A custom [ReAct Agent](https://arxiv.org/abs/2210.03629) designed to assist with Dickinson related inquires. Has an focus on sustainability and is a successor to [Gaia](https://github.com/WarpWing/GreenQuestChat/tree/main). The full version of "AgentD" should eventually come with a RAG tool (FAISS), Agent Tools (For Faculty Search and broader Web Search grounded on Dickinson's domain with an eventual LFU caching implementation.)
+A custom [ReAct Agent](https://arxiv.org/abs/2210.03629) designed to assist with Dickinson related inquires. Has an focus on sustainability and is a successor to [Gaia](https://github.com/WarpWing/GreenQuestChat/tree/main). The full version of "AgentD" should eventually come with a RAG tool (FAISS), Agent Tools (For Faculty Search and broader Web Search grounded on Dickinson's domain with an eventual LFU caching implementation.) 
+
+Demo: https://agentd.warpwing.cloud/
 
 ## To Do List
 - [ ] Implement final answer streaming
